@@ -128,4 +128,5 @@ ui/.vite/
 *.zip
 tmp/
 temp/
+.tmp/
 .cache/

@@ -306,10 +306,34 @@
 - 删除 `impedance` / `pos_current` / `pos_vel_current` 三个 MIT 控制模式。
 - `protocol.encode_mit` 和 `DmMotor.send_mit` 仅保留给历史 bring-up/对照脚本，不进入 service。
 - 调试期 `velocity_limit_rad_s` 用 **0.8 rad/s** 保护；参数整定完成后放开到 **10 rad/s**（用户确认健康）。
-- `set_pid` 在 `pos_vel` 下拒绝修改（驱动器内部环用 DMTool 调），在 `velocity_pos` 下修改 PC 位置 PID。
+- `set_pid` 在 `pos_vel` 下拒绝修改（驱动器内部环用寄存器读写/`store_params.py` 调），在 `velocity_pos` 下修改 PC 位置 PID。
 
 **后果**
 - 控制架构更简单、可解释：不再有 PC PID 与驱动器 MIT PD 的职责重叠。
-- yaw 的 `KP_APR=20` 已写入 `motors.yaw.position_kp_apr`，service 在 `pos_vel` enable 时写入 RAM；如需掉电保持，用 DMTool 存储。
+- yaw 的 `KP_APR=20` 已写入 `motors.yaw.position_kp_apr`，service 在 `pos_vel` enable 时写入 RAM；如需掉电保持，用 `scripts/store_params.py` 写入 flash。
 - 后续如负载/温度变化导致 6 Hz 回潮，再微调 `KP_APR`/`Deta`/`V_BW`，或切 `velocity_pos`。
 - MIT 仅作为历史资料，不再默认/生产使用。
+
+---
+
+## ADR-012：参数固化走项目内 store 命令；DMTool 与当前模块固件不兼容
+
+**状态**：已接受（2026-11-20）
+
+**背景**
+- 参数整定完成后需要把 yaw `KP_APR=20`、pitch `KP_APR=54`、`KI_APR=0` 固化到驱动 flash，避免每次上电依赖 service 写 RAM。
+- 官方 DMTool v2.1.9.4 在本机：打开 COM10 正常，但“读参数”每次只增加 39 个发送/接收计数且参数框全空，状态栏 `电机波特率未识别`、`FPS 0.0`。
+- 把 CAN ID 改为总线上不存在的 0x5 后，发送/接收仍一一对等，证明“接收”是模块串口回显，电机没有应答。
+- 官方 `DM_CAN.py`（DMTool 同源）串口帧第 3 字节为 `cmd=0x03`；本项目早期已实测本模块固件只接受 `cmd=0x01`。新旧协议开关、CAN Baud=1M、重开设备均无效。
+
+**决定**
+- 不使用 DMTool 写 flash；用项目已验证的串口路径执行官方同一条保存命令：
+  先失能，再向 `0x7FF` 发送 `[id_lo, id_hi, 0xAA, 0, 0, 0, 0, 0]`。
+- 修正 `protocol.encode_store`：第 4 字节由 `0x01` 改为 `0x00`，与官方 `save_motor_param` 对齐（此前该函数未被调用，属未验证代码）。
+- 新增 `scripts/store_params.py`：失能 → 写增益 → 回读校验 → 保存 → 延时回读；全程不发运动指令。
+- 若以后需要 DMTool 的图形化调试，先升级 USB2CAN 模块固件到支持 `cmd=0x03` 的版本；在此之前不要用 DMTool 写参数。
+
+**后果**
+- 参数固化不依赖官方 GUI，可在 CI/脚本中复现。
+- 保存后驱动约 22–26 ms 内恢复应答（未重启），掉电保持仍需下次上电读回 `KP_APR` 做最终确认。
+- 模块固件升级前，DMTool 的读/写/调试功能均视为不可用；项目文档和脚本以自研串口路径为准。

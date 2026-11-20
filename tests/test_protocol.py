@@ -3,6 +3,9 @@ from dm6220_gimbal.protocol import (
     decode_feedback,
     encode_mit,
     encode_pos_vel,
+    encode_register_read,
+    encode_register_write,
+    encode_store,
     encode_velocity,
     pack_usb2can_frame,
     parse_usb2can_frames,
@@ -39,6 +42,19 @@ def test_pos_vel_payload():
     assert len(payload) == 8
     assert abs(struct.unpack("<f", payload[:4])[0] + 1.5) < 1e-6
     assert abs(struct.unpack("<f", payload[4:8])[0] - 0.8) < 1e-6
+
+
+def test_register_frames():
+    assert encode_register_read(0x01, 0x1B).hex(" ").upper() == "01 00 33 1B 00 00 00 00"
+    assert encode_register_write(0x01, 0x1B, 0x41A00000).hex(" ").upper() == (
+        "01 00 55 1B 00 00 A0 41"
+    )
+
+
+def test_store_frame_matches_official_sdk():
+    # DM_Control_Python save_motor_param: 0x7FF, [id_lo, id_hi, 0xAA, 0, ...]
+    assert encode_store(0x01).hex(" ").upper() == "01 00 AA 00 00 00 00 00"
+    assert encode_store(0x02).hex(" ").upper() == "02 00 AA 00 00 00 00 00"
 
 
 def test_usb2can_frame_layout():

@@ -38,7 +38,7 @@ motors:
     temp_warn_c: 75
     temp_fault_c: 90
     # 原生 POS_VEL 位置环增益（RID 0x1B/0x1C，RAM）；service 在 pos_vel 使能时写入
-    # yaw 54 -> 20：6 Hz 小振荡基本消失，带载 0.97 N·m 无振动；如需掉电保持，用 DMTool 存储
+    # yaw 54 -> 20：6 Hz 小振荡基本消失，带载 0.97 N·m 无振动；已用 scripts/store_params.py 保存到 flash
     position_kp_apr: 20.0
     position_ki_apr: 0.0
   pitch:

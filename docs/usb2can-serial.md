@@ -207,6 +207,8 @@ SerialUsb2CanBus（55 AA 串口封装） → COM
 
 官方例程末字节是 `0x88`，本机 `0x00` 可用；不同固件可能有 CRC 校验。若通信失败，按以下方法抓包：
 
+> 注意：当前模块固件只接受 `cmd=0x01`，官方 DMTool 使用 `cmd=0x03`，因此 DMTool 在本机不会产生有效 CAN 帧（见 `hardware-notes.md` 2.8）。涉及 DMTool 的方法 A/B/C 仅适用于模块固件升级后；现阶段直接用 `SerialUsb2CanBus` 的 TX/RX 统计和原始字节日志抓包。
+
 **方法 A：DMTool 的 CAN 页**  
 只能看解码后的 CAN 帧，不能看串口封装；适合确认电机协议。
 

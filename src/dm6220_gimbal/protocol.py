@@ -174,7 +174,12 @@ def encode_register_write(can_id: int, rid: int, value: int) -> bytes:
 
 
 def encode_store(can_id: int) -> bytes:
-    return bytes([can_id & 0xFF, (can_id >> 8) & 0xFF, REG_STORE, 0x01, 0, 0, 0, 0])
+    """Save all runtime parameters to flash (official ``save_motor_param``).
+
+    Confirmed against DM_Control_Python: 0x7FF, data
+    ``[id_lo, id_hi, 0xAA, 0, 0, 0, 0, 0]``.  The drive must be disabled.
+    """
+    return bytes([can_id & 0xFF, (can_id >> 8) & 0xFF, REG_STORE, 0x00, 0, 0, 0, 0])
 
 
 def pack_usb2can_frame(can_id: int, data: bytes, cmd: int = 0x01) -> bytes:

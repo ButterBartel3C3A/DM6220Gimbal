@@ -644,7 +644,7 @@ MCP Server 作为独立 stdio 进程，通过 HTTP 连接 `gimbald`；**不直�
 
 ## 13. 实施路线
 
-1. **硬件 bring-up**：插上 USB2CAN，确认新 COM 口和驱动；用 DMTool 读参数/设 ID/确认 1 Mbps 与 MIT 模式；用 `capture_usb2can.py` 核对 `55 AA` 帧偏移与 CRC。
+1. **硬件 bring-up**：插上 USB2CAN，确认新 COM 口和驱动；用项目串口路径读参数/设 ID/确认 1 Mbps（DMTool v2.1.9.4 与当前模块固件不兼容，见 ADR-012）；用 `capture_usb2can.py` 核对 `55 AA` 帧偏移与 CRC。
 2. **协议与电机驱动**：MIT 编解码 + 单元测试；真机低力矩使能、单电机位置保持；验证反馈解析。
 3. **控制环与仿真**：PID、限幅、轨迹、状态机；虚拟总线下闭环。
 4. **双轴运动学**：逆解/正解、标定、软限位、角度解缠。

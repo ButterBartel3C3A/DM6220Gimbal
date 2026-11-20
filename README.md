@@ -46,6 +46,8 @@
 | 速度模式 | 0.1 rad/s × 0.3 s，两台平滑转动约 0.02 rad |
 | MIT 模式（历史，已停用） | yaw `Kp=0.5, Kd=0.1`；pitch `Kp=3.0, Kd=0.3`；高速/负载下出现 46 Hz，生产路径不再使用 |
 | POS_VEL | `KP_APR=20`（yaw）；整定测试用 0.8 限幅，无 6/46 Hz、带载 0.97 N·m 稳定；整定后配置限幅 **10 rad/s** |
+| 参数固化 | yaw `KP_APR=20` / pitch `KP_APR=54` / `KI_APR=0` 已发 flash 保存命令并回读通过（`store_params.py`） |
+| **4 rad/s 连续旋转** | yaw +4.0 rad/s × 20 s，行走 **+79.99 rad（12.73 圈）**，3 次 wrap；位置差分峰值 **4.33 rad/s**，力矩峰值 **0.232 N·m**，HF 0.018–0.058；pitch 保持 −1.884 rad（偏差 ≤0.001），无 6/46 Hz |
 | 高速 POS_VEL | ±0.5 rad / 2 s，实际峰值 yaw 2.04 / pitch 1.67 rad/s，HF 0.10–0.13，无 6/46 Hz |
 | 速度模式 + 软负载 | 45 s，yaw 力矩峰值 0.42 N·m，HF 0.02–0.03，无 46 Hz |
 | 反向连续旋转 | yaw -0.5 rad/s × 45 s，1 次 wrap，累计 -22.38 rad（-3.56 圈） |
@@ -55,8 +57,8 @@
 | pitch 小步 | 0.03 rad，`Kp=3.0/Kd=0.3`，误差约 0.005–0.008 rad，最大速度 0.165 rad/s |
 | 纯力矩 `tau_ff` | 0.05 N·m 指令 → 反馈约 0.0415 N·m，yaw 加速到 0.582 rad/s；`KT_Value=0` 不影响纯力矩 |
 | 最大实测 | 速度 0.582 rad/s，力矩 0.0464 N·m，温度 33/29 °C |
-| 当前状态 | 两台已恢复速度模式 3、失能、timeout 0 |
-| 当前位置 | yaw `p_m` ≈ +7.87 rad，pitch `p_m` ≈ -1.485 rad（pitch 失能后会缓慢下落） |
+| 当前状态 | 两台已恢复速度模式 3、失能、timeout 0；增益已固化到 flash |
+| 当前位置 | 4 rad/s 连续旋转后 yaw ≈ +67.5 rad（关节坐标，未回零），pitch ≈ −1.884 rad（pitch 失能后会缓慢下落） |
 
 ## 实现状态（2026-11-20）
 
@@ -71,13 +73,15 @@ MVP 已落地到 `src/dm6220_gimbal/`：
 - `api.py` + `ui/`：FastAPI HTTP/WebSocket + 本地 Web 仪表盘
 - `cli.py`：`serve / probe / scan / status / enable / disable / estop / attitude / joints`
 - `mcp_server.py`：MCP stdio 工具，供 Claude Code 等 AI 调用
-- `tests/`：协议、运动学、PID、配置，17 个测试通过
+- `tests/`：协议、运动学、PID、配置，19 个测试通过
 
-默认配置使用 **`pos_vel`**：PC 发关节目标 + 速度限幅（整定后 **10 rad/s**），驱动器内部跑位置环→速度环→电流环。yaw 的驱动器位置环已整定为 `KP_APR=20`（`motors.yaw.position_kp_apr`，service 在 enable 时写入 RAM；掉电保持需用 DMTool 存储）。备选 **`velocity_pos`**：PC 位置环输出速度，驱动器跑速度环→电流环。**MIT 模式已从 service/config 移除。**
+默认配置使用 **`pos_vel`**：PC 发关节目标 + 速度限幅（整定后 **10 rad/s**），驱动器内部跑位置环→速度环→电流环。yaw 的驱动器位置环已整定为 `KP_APR=20`（`motors.yaw.position_kp_apr`，service 在 enable 时写入 RAM）；掉电保持已用 `scripts/store_params.py` 写入 flash（yaw 20/pitch 54，`KI_APR=0`）。备选 **`velocity_pos`**：PC 位置环输出速度，驱动器跑速度环→电流环。**MIT 模式已从 service/config 移除。**
 
 > **pitch 机械警告**：实测 pitch 轴在 disabled 状态会因重力缓慢下落。请先机械配平/配重；`estop` 会立即失能，pitch 可能下落。POS_VEL/velocity_pos 下驱动器速度环能抵抗负载，但失能后没有保持力矩。
 >
-> **振动警告（2026-11-20）**：MIT 位置正弦 + 外部负载会出现约 **46 Hz** 振动；同速/同负载的速度模式对照完全干净（45 s、yaw 0.42 N·m、HF 0.02–0.03）。生产路径已改为 **POS_VEL/velocity_pos**，MIT 位置环停用。POS_VEL 的 yaw 6.2 Hz 小振荡通过 **`KP_APR 54 → 20`** 基本消除；带载 0.97 N·m 测试无 6/46 Hz，位置误差 ≤0.065 rad、峰值速度 0.65 rad/s。service 在 enable 时写入该增益（RAM）；如需掉电保持，用 DMTool 存储。详见 [`docs/hardware-notes.md`](docs/hardware-notes.md) 2.7 节。
+> **振动警告（2026-11-20）**：MIT 位置正弦 + 外部负载会出现约 **46 Hz** 振动；同速/同负载的速度模式对照完全干净（45 s、yaw 0.42 N·m、HF 0.02–0.03）。生产路径已改为 **POS_VEL/velocity_pos**，MIT 位置环停用。POS_VEL 的 yaw 6.2 Hz 小振荡通过 **`KP_APR 54 → 20`** 基本消除；带载 0.97 N·m 测试无 6/46 Hz，位置误差 ≤0.065 rad、峰值速度 0.65 rad/s。service 在 enable 时写入该增益（RAM）；掉电保持已用 `scripts/store_params.py` 固化到 flash。详见 [`docs/hardware-notes.md`](docs/hardware-notes.md) 2.7/2.8 节。
+>
+> **DMTool 兼容性（2026-11-20）**：DMTool v2.1.9.4 无法与当前 USB2CAN 模块固件通信——官方串口帧用 `cmd=0x03`，本模块只接受 `cmd=0x01`；“读参数”收到的只是模块回显（改用不存在的 CAN ID 后计数仍一一对等）。参数烧录因此使用项目内 `scripts/store_params.py`（官方 `save_motor_param` 同一条命令）。详见 [`docs/hardware-notes.md`](docs/hardware-notes.md) 2.8 节。
 
 运行：
 
@@ -158,6 +162,8 @@ DM6220Gimbal/
 │  ├─ usb2can_probe.py       # 55 AA 帧探测/只读寄存器
 │  ├─ yaw_continuous_test.py # 连续 yaw + pitch MIT 保持测试
 │  ├─ pos_vel_sine_test.py   # 生产路径：POS_VEL 正弦 + HF 振动检测
+│  ├─ pos_vel_continuous_test.py # 生产路径：yaw 4 rad/s 连续旋转 + pitch 保持
+│  ├─ store_params.py        # 写驱动增益并保存到 flash（官方 save_motor_param）
 │  ├─ velocity_sine_test.py  # velocity_pos/速度正弦 + HF 振动检测
 │  ├─ mit_oscillation_test.py # 历史 MIT 对照（生产路径不使用）
 │  ├─ serial_500hz_bench.py  # 双电机 500 Hz 串口/反馈基准
