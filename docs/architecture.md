@@ -1,6 +1,7 @@
 # 系统架构设计
 
-> 版本：v0.2（2026-11-19，根据官方 DMTool/USB2CAN 工具实测修正传输层）
+> 版本：v0.3（2026-11-20）
+> **架构变更**：生产路径已改为 **POS_VEL（位置-速度双环）**，MIT 控制模式已从 service/config 移除；本文的 MIT 章节保留为历史设计记录，当前实现以 `README.md`、`config/gimbal.example.yaml` 和 ADR-011 为准。
 > 适用范围：DM-G6220 ×2 + 达妙 USB2CAN 串口模块（DM-USBCU1 一类；USB2CANFD 作为备选后端）+ Windows PC 上位机。
 
 ## 1. 目标与边界
@@ -419,6 +420,8 @@ MIT(p_des=q_target, v_des=0, Kp=Kp_imp, Kd=Kd_imp, tau_ff=gravity)
 - 任一电机状态码为故障（8–E）→ FAULT，失能全部电机。
 - 温度超过阈值 → 先降额（力矩按比例），超过硬阈值 → FAULT。
 - 控制周期 overrun 连续超过阈值 → 记录并降级（降低目标速度/报警），不静默继续。
+- **速度安全（2026-11-20 真机修正）**：DM 电机在近零速时速度反馈噪声很大（位置几乎不动但速度尖峰可达数 rad/s）。因此 1 rad/s 用户限速使用**位置差分速度**（50 ms 窗口 + 10 Hz 低通）；原始速度只保留 5 rad/s 的失控兜底。跨 ±12.5 rad 的 yaw 必须用 unwrapped 位置做差分。
+- **pitch 重力**：实测 pitch 轴在 disabled 时会下落，MIT 阻抗在部分角度托不住。默认模式为 `impedance`，`pos_current` 已实现但需先机械配平/标定重力前馈；`estop` 失能后 pitch 可能下落，需机械支撑。
 
 ### 5.7 安全策略
 
@@ -431,10 +434,10 @@ MIT(p_des=q_target, v_des=0, Kp=Kp_imp, Kd=Kd_imp, tau_ff=gravity)
 | 电机故障码 | 8–E | FAULT，失能 |
 | MOS/线圈温度 | 80/90 °C 警告，硬阈值 FAULT | 降额/失能 |
 | 命令 TTL | 500 ms | 超时保持最后目标（位置保持），不继续运动 |
-| 急停 | 最高优先级 | 斜坡到 0 力矩 → 失能 → 锁存 ESTOP |
+| 急停 | 最高优先级 | MVP：立即 0 力矩 → 失能 → 锁存 ESTOP；pitch 不平衡时可能下落，需机械支撑 |
 | 目标阶跃 | 每周期最大变化 | 限幅，避免冲击 |
 
-急停语义需要结合机械结构确认：如果失能后云台会因重力自由下落，默认应采用“先保持/阻尼减速，再失能”，并提供“立即断电”外部急停。配置项 `estop_behavior: ramp_and_disable | hold | disable`。
+急停语义需要结合机械结构确认：如果失能后云台会因重力自由下落，必须有机械支撑/配重或外部急停。MVP 实现的是 **立即 0 力矩 + 失能**；`estop_behavior` 的斜坡/保持选项保留为后续扩展。当前实测 pitch 轴不平衡，失能后会下落。
 
 ## 6. 运动学
 

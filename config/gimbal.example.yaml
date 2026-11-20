@@ -34,9 +34,13 @@ motors:
     p_max: 12.5               # 已读回（RID 0x15）
     v_max: 45.0               # 已读回（RID 0x16）；DMTool 滑块默认 30 只是界面默认
     t_max: 10.0               # 已读回（RID 0x17）；不是物理峰值
-    torque_limit_nm: 0.8      # bring-up 保守值；MIT hold 实测约 0.01 N·m
+    torque_limit_nm: 0.8      # bring-up 保守值
     temp_warn_c: 75
     temp_fault_c: 90
+    # 原生 POS_VEL 位置环增益（RID 0x1B/0x1C，RAM）；service 在 pos_vel 使能时写入
+    # yaw 54 -> 20：6 Hz 小振荡基本消失，带载 0.97 N·m 无振动；如需掉电保持，用 DMTool 存储
+    position_kp_apr: 20.0
+    position_ki_apr: 0.0
   pitch:
     model: DMG6220
     can_id: 0x02
@@ -49,52 +53,38 @@ motors:
     torque_limit_nm: 0.8      # bring-up 保守值
     temp_warn_c: 75
     temp_fault_c: 90
+    # pitch 原值 54 已干净，保持；yaw 调到 20
+    position_kp_apr: 54.0
+    position_ki_apr: 0.0
 
 control:
   rate_hz: 500                # 串口 921600 下默认 500；两电机 500 Hz 已占约 50% 带宽，不建议 1000
-  # bring-up 先用 impedance（MIT 内部 PD，已验证）；tau_ff 已验证，PC 位置环整定后切 pos_current
-  mode: impedance             # pos_current | pos_vel_current | impedance
+  # 生产路径只用位置-速度双环，不再使用 MIT。
+  # pos_vel: 0x100+ID，驱动器内部位置环 -> 速度环 -> 电流环
+  # velocity_pos: PC 位置 PID -> 0x200+ID 驱动器速度环 -> 电流环
+  mode: pos_vel               # pos_vel | velocity_pos
+  velocity_limit_rad_s: 0.8   # POS_VEL 帧的速度限幅 / velocity_pos 的目标限幅；给位置环瞬态留余量
   feedback_timeout_ms: 100
   command_ttl_ms: 500         # AI/API 目标超时后保持最后位置
 
-  # ---- pos_current: 位置 PID -> 力矩 ----
+  # velocity_pos 的 PC 位置环（输出为 rad/s）；pos_vel 模式不使用
   position:
-    kp: 8.0                   # N·m/rad，占位值，必须现场整定
-    ki: 0.30                  # N·m/(rad·s)
-    kd: 0.40                  # N·m/(rad/s)，作用于测量值
-    integral_limit: 0.5       # 积分项限幅（N·m）
-    output_limit_nm: 0.8
-    derivative_filter_hz: 30.0
-    deadband_rad: 0.0
-
-  # ---- pos_vel_current: 位置环输出速度，速度环输出力矩 ----
-  velocity:
-    kp: 0.20                  # N·m/(rad/s)
-    ki: 0.02
-    kd: 0.0
-    integral_limit: 0.5
-    output_limit_nm: 0.8
-    feedback_filter_hz: 50.0
-    target_limit_rad_s: 1.0   # bring-up 限 1 rad/s
-
-  # ---- impedance: 直接下发 MIT PD（真机已验证的低增益） ----
-  # 注意：p_des 在 ±12.5 rad 会回绕，连续 yaw 不要用 impedance；连续 yaw 用 pos_current 或速度模式
-  impedance:
     yaw:
-      kp: 0.5                 # MIT Kp，范围 0..500
-      kd: 0.1                 # MIT Kd，范围 0..5
-      v_des: 0.0
+      kp: 2.0                 # (rad/s)/rad
+      ki: 0.3
+      kd: 0.1
+      integral_limit: 0.3
+      output_limit: 1.0       # rad/s
+      derivative_filter_hz: 10.0
+      deadband_rad: 0.002
     pitch:
-      kp: 3.0                 # pitch 有重力/摩擦，低增益跟踪误差大
-      kd: 0.3
-      v_des: 0.0
-
-  # 可选前馈（第一版可全为 0）
-  feedforward:
-    gravity_enabled: false
-    gravity_nm_at_horizontal: 0.0
-    inertia_kgm2: 0.0
-    viscous_friction: 0.0
+      kp: 2.0
+      ki: 0.3
+      kd: 0.1
+      integral_limit: 0.3
+      output_limit: 1.0       # rad/s
+      derivative_filter_hz: 10.0
+      deadband_rad: 0.002
 
   trajectory:
     max_joint_velocity_rad_s: 1.0   # bring-up 限 1 rad/s
@@ -111,8 +101,11 @@ kinematics:
   yaw_min_rad: -1.0e9         # 连续时仅作数值保护
   yaw_max_rad: 1.0e9
   pitch_continuous: false
-  pitch_min_rad: -1.4835      # -85 deg
-  pitch_max_rad: 1.4835       # +85 deg
+  # 注意：电机 p_m 零点不等于云台机械零位；当前实际姿态约 -1.7 rad，
+  # 因此软限位先放宽到 ±3.0 rad，避免把实际姿态夹住。正式使用前必须
+  # 按机械限位重新标定这两个值。
+  pitch_min_rad: -3.0
+  pitch_max_rad: 3.0
   roll_tolerance_rad: 0.01
   unwrap_yaw: true
   absolute_position_rid: 0x50 # p_m 多圈绝对位置；16-bit 反馈在 ±12.5 回绕
@@ -127,7 +120,7 @@ api:
   cors_origins: []            # 本地 UI 不需要 CORS
 
 safety:
-  estop_behavior: ramp_and_disable  # ramp_and_disable | hold | disable
+  estop_behavior: disable     # MVP 立即 0 力矩 + 失能；pitch 需机械支撑/配重
   estop_ramp_ms: 300
   max_loop_overruns: 10       # 连续 overrun 超过则降级/报警
   enable_ramp_ms: 300         # 使能后力矩斜坡
@@ -135,6 +128,7 @@ safety:
   hard_max_torque_nm: 1.5     # 代码兜底，配置不能超过
   hard_max_velocity_rad_s: 1.0  # 用户 bring-up 安全限速
   hard_max_temp_c: 100
+  can_timeout_ms: 1000        # 使能时临时写入电机 0x09；失联 1 s 自动停机
 
 telemetry:
   snapshot_hz: 50             # 内部快照/WS 推送频率
@@ -147,5 +141,5 @@ telemetry:
 logging:
   level: INFO
   file: logs/gimbald.log
-  json: true
+  json_logs: true
   console: true

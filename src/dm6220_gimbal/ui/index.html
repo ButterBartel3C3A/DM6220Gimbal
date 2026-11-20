@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DM6220 Gimbal</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div>
+      <h1>DM6220 双轴云台</h1>
+      <p class="sub">MIT / 500 Hz / USB2CAN</p>
+    </div>
+    <div class="badge" id="state-badge">DISCONNECTED</div>
+  </header>
+
+  <main>
+    <section class="card controls">
+      <h2>连接与安全</h2>
+      <div class="row">
+        <button id="btn-connect">连接</button>
+        <button id="btn-disconnect">断开</button>
+        <button id="btn-enable" class="ok">使能</button>
+        <button id="btn-disable">失能</button>
+        <button id="btn-estop" class="danger">急停</button>
+        <button id="btn-clear">清故障</button>
+      </div>
+      <p class="hint">急停会立即输出 0 力矩并失能。清故障前请确认机械安全。</p>
+    </section>
+
+    <section class="card">
+      <h2>姿态目标</h2>
+      <div class="row">
+        <label>Yaw (°)<input id="yaw" type="number" value="0" step="1" /></label>
+        <label>Pitch (°)<input id="pitch" type="number" value="0" step="1" /></label>
+        <label>时长 (s)<input id="duration" type="number" value="0.5" step="0.1" min="0" /></label>
+        <button id="btn-go" class="ok">执行</button>
+      </div>
+      <p class="hint">连续 yaw 使用 unwrapped 角度，可以超过 ±180°；pitch 受软限位约束。</p>
+    </section>
+
+    <section class="card">
+      <h2>状态</h2>
+      <div class="grid">
+        <div><span>姿态 Yaw</span><strong id="att-yaw">—</strong></div>
+        <div><span>姿态 Pitch</span><strong id="att-pitch">—</strong></div>
+        <div><span>关节 Yaw</span><strong id="joint-yaw">—</strong></div>
+        <div><span>关节 Pitch</span><strong id="joint-pitch">—</strong></div>
+        <div><span>控制环</span><strong id="loop">—</strong></div>
+        <div><span>故障</span><strong id="fault">—</strong></div>
+      </div>
+      <canvas id="chart" width="900" height="220"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>电机</h2>
+      <table>
+        <thead>
+          <tr><th>轴</th><th>状态</th><th>位置 (rad)</th><th>原始位置</th><th>速度</th><th>力矩</th><th>温度</th><th>反馈</th></tr>
+        </thead>
+        <tbody id="motor-body"></tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>日志</h2>
+      <pre id="log"></pre>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

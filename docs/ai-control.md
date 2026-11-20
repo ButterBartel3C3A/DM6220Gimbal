@@ -112,6 +112,7 @@ Content-Type: application/json
 
 - 只允许在 `ENABLED`/`RUNNING` 状态修改；写入后控制线程在下一周期生效。
 - 值受硬上限约束；超出返回 `accepted=false`。
+- `pos_vel` 模式下驱动器内部位置/速度环增益不能通过这个接口修改（由 YAML 的 `motors.<axis>.position_kp_apr/position_ki_apr` 配置，service 在 enable 时写入 RAM）；`velocity_pos` 模式下修改 PC 位置 PID。
 - 修改会写审计日志；不自动持久化到 YAML（需显式保存）。
 
 ### 3.5 遥测

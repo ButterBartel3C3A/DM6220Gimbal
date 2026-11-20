@@ -1,4 +1,4 @@
-"""500 Hz serial/CAN benchmark with both motors in MIT hold.
+"""500 Hz serial/CAN benchmark with both motors in native POS_VEL hold.
 
 Safety:
 - Only holds the current positions (no intentional motion).
@@ -76,6 +76,10 @@ def encode_mit(pos: float, vel: float, kp: float, kd: float, tau: float = 0.0) -
             tu & 0xFF,
         ]
     )
+
+
+def encode_pos_vel(pos: float, velocity_limit: float) -> bytes:
+    return struct.pack("<f", pos) + struct.pack("<f", abs(velocity_limit))
 
 
 def decode_feedback(pkt: bytes):
@@ -234,8 +238,8 @@ def main() -> int:
 
         bus.send_sync(YAW_CAN_ID, bytes.fromhex("FF FF FF FF FF FF FF FD"))
         bus.send_sync(PITCH_CAN_ID, bytes.fromhex("FF FF FF FF FF FF FF FD"))
-        bus.write_reg(YAW_CAN_ID, 0x0A, 1)
-        bus.write_reg(PITCH_CAN_ID, 0x0A, 1)
+        bus.write_reg(YAW_CAN_ID, 0x0A, 2)
+        bus.write_reg(PITCH_CAN_ID, 0x0A, 2)
         bus.write_reg(YAW_CAN_ID, 0x09, 20000)    # 1 s watchdog
         bus.write_reg(PITCH_CAN_ID, 0x09, 20000)
         bus.send_sync(YAW_CAN_ID, bytes.fromhex("FF FF FF FF FF FF FF FC"))
@@ -247,8 +251,8 @@ def main() -> int:
         rx = RxThread(bus.ser)
         rx.start()
 
-        yaw_frame = pack_frame(YAW_CAN_ID, encode_mit(yaw_pos, 0.0, 0.5, 0.1))
-        pitch_frame = pack_frame(PITCH_CAN_ID, encode_mit(pitch_pos, 0.0, 3.0, 0.3))
+        yaw_frame = pack_frame(0x100 + YAW_CAN_ID, encode_pos_vel(yaw_pos, 0.0))
+        pitch_frame = pack_frame(0x100 + PITCH_CAN_ID, encode_pos_vel(pitch_pos, 0.0))
         period = 1.0 / args.rate
         start_periods: list[float] = []
         overruns = 0
@@ -278,8 +282,8 @@ def main() -> int:
         elapsed = time.perf_counter() - t_start
 
         # Keep the watchdog fed while stopping.
-        bus.ser.write(pack_frame(YAW_CAN_ID, encode_mit(yaw_pos, 0.0, 0.0, 0.0)))
-        bus.ser.write(pack_frame(PITCH_CAN_ID, encode_mit(pitch_pos, 0.0, 0.0, 0.0)))
+        bus.ser.write(pack_frame(0x100 + YAW_CAN_ID, encode_pos_vel(yaw_pos, 0.0)))
+        bus.ser.write(pack_frame(0x100 + PITCH_CAN_ID, encode_pos_vel(pitch_pos, 0.0)))
         bus.ser.flush()
         time.sleep(0.05)
         rx.stop_flag.set()
@@ -316,8 +320,8 @@ def main() -> int:
             rx.join(timeout=1.0)
         try:
             if enabled:
-                bus.ser.write(pack_frame(YAW_CAN_ID, encode_mit(yaw_pos or 0.0, 0.0, 0.0, 0.0)))
-                bus.ser.write(pack_frame(PITCH_CAN_ID, encode_mit(pitch_pos or 0.0, 0.0, 0.0, 0.0)))
+                bus.ser.write(pack_frame(0x100 + YAW_CAN_ID, encode_pos_vel(yaw_pos or 0.0, 0.0)))
+                bus.ser.write(pack_frame(0x100 + PITCH_CAN_ID, encode_pos_vel(pitch_pos or 0.0, 0.0)))
                 bus.ser.flush()
                 time.sleep(0.1)
                 bus.send_sync(YAW_CAN_ID, bytes.fromhex("FF FF FF FF FF FF FF FD"))
@@ -325,10 +329,8 @@ def main() -> int:
         except Exception as e:
             print("cleanup warning:", e)
         try:
-            if yaw_mode is not None:
-                bus.write_reg(YAW_CAN_ID, 0x0A, yaw_mode)
-            if pitch_mode is not None:
-                bus.write_reg(PITCH_CAN_ID, 0x0A, pitch_mode)
+            bus.write_reg(YAW_CAN_ID, 0x0A, 3)
+            bus.write_reg(PITCH_CAN_ID, 0x0A, 3)
         except Exception as e:
             print("restore mode warning:", e)
         try:

@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dm6220-gimbal"
+version = "0.1.0"
+description = "PC-side MIT controller for a dual-axis DM6220 gimbal over a serial USB2CAN adapter"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "DM6220Gimbal" }]
+dependencies = [
+  "pyserial>=3.5",
+  "python-can>=4.5",
+  "numpy>=2.0",
+  "pydantic>=2.7",
+  "PyYAML>=6.0",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "typer>=0.12",
+  "rich>=13.0",
+]
+
+[project.optional-dependencies]
+ai = ["mcp>=1.0", "httpx>=0.27"]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+  "httpx>=0.27",
+  "ruff>=0.6",
+  "mypy>=1.10",
+]
+
+[project.scripts]
+dm6220-gimbal = "dm6220_gimbal.cli:app"
+dm6220-gimbal-mcp = "dm6220_gimbal.mcp_server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dm6220_gimbal = ["ui/*.html", "ui/*.js", "ui/*.css"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
+ignore_missing_imports = true
