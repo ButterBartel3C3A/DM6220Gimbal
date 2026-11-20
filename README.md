@@ -45,7 +45,8 @@
 | 限幅 | PMAX 12.5，VMAX 45，TMAX 10，NPP 14，Gr 1.0 |
 | 速度模式 | 0.1 rad/s × 0.3 s，两台平滑转动约 0.02 rad |
 | MIT 模式（历史，已停用） | yaw `Kp=0.5, Kd=0.1`；pitch `Kp=3.0, Kd=0.3`；高速/负载下出现 46 Hz，生产路径不再使用 |
-| POS_VEL | `KP_APR=20`（yaw）、速度限幅 0.8；15–20 s 测试无 6/46 Hz，HF≈0.04；带载 0.97 N·m 无振动，位置误差 ≤0.065 rad，峰值速度 0.65 rad/s |
+| POS_VEL | `KP_APR=20`（yaw）；整定测试用 0.8 限幅，无 6/46 Hz、带载 0.97 N·m 稳定；整定后配置限幅 **10 rad/s** |
+| 高速 POS_VEL | ±0.5 rad / 2 s，实际峰值 yaw 2.04 / pitch 1.67 rad/s，HF 0.10–0.13，无 6/46 Hz |
 | 速度模式 + 软负载 | 45 s，yaw 力矩峰值 0.42 N·m，HF 0.02–0.03，无 46 Hz |
 | 反向连续旋转 | yaw -0.5 rad/s × 45 s，1 次 wrap，累计 -22.38 rad（-3.56 圈） |
 | 正向连续旋转 | yaw +0.5 rad/s × 45 s，1 次 wrap，累计 +22.42 rad（+3.57 圈） |
@@ -72,7 +73,7 @@ MVP 已落地到 `src/dm6220_gimbal/`：
 - `mcp_server.py`：MCP stdio 工具，供 Claude Code 等 AI 调用
 - `tests/`：协议、运动学、PID、配置，17 个测试通过
 
-默认配置使用 **`pos_vel`**：PC 发关节目标 + 速度限幅，驱动器内部跑位置环→速度环→电流环。yaw 的驱动器位置环已整定为 `KP_APR=20`（`motors.yaw.position_kp_apr`，service 在 enable 时写入 RAM；掉电保持需用 DMTool 存储）。备选 **`velocity_pos`**：PC 位置环输出速度，驱动器跑速度环→电流环。**MIT 模式已从 service/config 移除。**
+默认配置使用 **`pos_vel`**：PC 发关节目标 + 速度限幅（整定后 **10 rad/s**），驱动器内部跑位置环→速度环→电流环。yaw 的驱动器位置环已整定为 `KP_APR=20`（`motors.yaw.position_kp_apr`，service 在 enable 时写入 RAM；掉电保持需用 DMTool 存储）。备选 **`velocity_pos`**：PC 位置环输出速度，驱动器跑速度环→电流环。**MIT 模式已从 service/config 移除。**
 
 > **pitch 机械警告**：实测 pitch 轴在 disabled 状态会因重力缓慢下落。请先机械配平/配重；`estop` 会立即失能，pitch 可能下落。POS_VEL/velocity_pos 下驱动器速度环能抵抗负载，但失能后没有保持力矩。
 >

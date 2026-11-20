@@ -63,7 +63,7 @@ control:
   # pos_vel: 0x100+ID，驱动器内部位置环 -> 速度环 -> 电流环
   # velocity_pos: PC 位置 PID -> 0x200+ID 驱动器速度环 -> 电流环
   mode: pos_vel               # pos_vel | velocity_pos
-  velocity_limit_rad_s: 0.8   # POS_VEL 帧的速度限幅 / velocity_pos 的目标限幅；给位置环瞬态留余量
+  velocity_limit_rad_s: 10.0  # POS_VEL 帧的速度限幅 / velocity_pos 的目标限幅（整定后放开）
   feedback_timeout_ms: 100
   command_ttl_ms: 500         # AI/API 目标超时后保持最后位置
 
@@ -74,7 +74,7 @@ control:
       ki: 0.3
       kd: 0.1
       integral_limit: 0.3
-      output_limit: 1.0       # rad/s
+      output_limit: 10.0      # rad/s
       derivative_filter_hz: 10.0
       deadband_rad: 0.002
     pitch:
@@ -82,12 +82,12 @@ control:
       ki: 0.3
       kd: 0.1
       integral_limit: 0.3
-      output_limit: 1.0       # rad/s
+      output_limit: 10.0      # rad/s
       derivative_filter_hz: 10.0
       deadband_rad: 0.002
 
   trajectory:
-    max_joint_velocity_rad_s: 1.0   # bring-up 限 1 rad/s
+    max_joint_velocity_rad_s: 10.0  # 整定后放开到 10 rad/s
     max_joint_accel_rad_s2: 12.0
     default_duration_s: 0.5
 
@@ -126,7 +126,7 @@ safety:
   enable_ramp_ms: 300         # 使能后力矩斜坡
   allow_ai_pid_write: true    # AI 可改 PID，但受硬限幅
   hard_max_torque_nm: 1.5     # 代码兜底，配置不能超过
-  hard_max_velocity_rad_s: 1.0  # 用户 bring-up 安全限速
+  hard_max_velocity_rad_s: 10.0  # 整定后放开；调试期曾用 1.0
   hard_max_temp_c: 100
   can_timeout_ms: 1000        # 使能时临时写入电机 0x09；失联 1 s 自动停机
 

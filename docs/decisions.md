@@ -305,7 +305,7 @@
   - `velocity_pos`：PC 位置 PID → `v_des`；`0x200+ID` 驱动器速度环→电流环。
 - 删除 `impedance` / `pos_current` / `pos_vel_current` 三个 MIT 控制模式。
 - `protocol.encode_mit` 和 `DmMotor.send_mit` 仅保留给历史 bring-up/对照脚本，不进入 service。
-- 默认 `velocity_limit_rad_s` 降到 **0.8 rad/s**，为 POS_VEL 位置环瞬态留出余量；用户要求上限 1 rad/s。
+- 调试期 `velocity_limit_rad_s` 用 **0.8 rad/s** 保护；参数整定完成后放开到 **10 rad/s**（用户确认健康）。
 - `set_pid` 在 `pos_vel` 下拒绝修改（驱动器内部环用 DMTool 调），在 `velocity_pos` 下修改 PC 位置 PID。
 
 **后果**

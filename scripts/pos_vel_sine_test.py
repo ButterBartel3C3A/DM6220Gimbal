@@ -38,10 +38,10 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--port", default=None)
     ap.add_argument("--amplitude", type=float, default=0.2, help="position amplitude rad")
     ap.add_argument("--period", type=float, default=4.0)
-    ap.add_argument("--velocity-limit", type=float, default=1.0, help="rad/s")
+    ap.add_argument("--velocity-limit", type=float, default=10.0, help="rad/s")
     ap.add_argument("--duration", type=float, default=30.0)
     ap.add_argument("--rate", type=float, default=500.0)
-    ap.add_argument("--speed-limit", type=float, default=0.98)
+    ap.add_argument("--speed-limit", type=float, default=10.0)
     ap.add_argument("--vel-window", type=float, default=0.1)
     ap.add_argument("--raw-speed-limit", type=float, default=50.0)
     ap.add_argument("--vibration-limit", type=float, default=1.0)
@@ -81,10 +81,10 @@ def main() -> int:
         raise SystemExit("amplitude must be in [0.02, 0.5] rad")
     if args.period < 1.0:
         raise SystemExit("period must be >= 1 s")
-    if not (0.05 <= args.velocity_limit <= 1.0):
-        raise SystemExit("velocity_limit must be in [0.05, 1] rad/s")
-    if args.speed_limit > 1.0:
-        raise SystemExit("speed_limit must be <= 1 rad/s")
+    if not (0.05 <= args.velocity_limit <= 10.0):
+        raise SystemExit("velocity_limit must be in [0.05, 10] rad/s")
+    if args.speed_limit > 10.0:
+        raise SystemExit("speed_limit must be <= 10 rad/s")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     cfg = load_config(args.config)

@@ -42,7 +42,7 @@ def parse_args() -> argparse.Namespace:
     ap.add_argument("--period", type=float, default=4.0)
     ap.add_argument("--duration", type=float, default=30.0, help="0 = until stop")
     ap.add_argument("--rate", type=float, default=500.0)
-    ap.add_argument("--speed-limit", type=float, default=0.98, help="position-derived")
+    ap.add_argument("--speed-limit", type=float, default=10.0, help="position-derived")
     ap.add_argument("--vel-window", type=float, default=0.1)
     ap.add_argument("--raw-speed-limit", type=float, default=50.0)
     ap.add_argument("--vibration-limit", type=float, default=1.0, help="HF RMS rad/s")
@@ -59,12 +59,12 @@ def f32(raw: int) -> float:
 
 def main() -> int:
     args = parse_args()
-    if args.amplitude <= 0 or args.amplitude >= 1.0:
-        raise SystemExit("amplitude must be in (0, 1) rad/s")
+    if args.amplitude <= 0 or args.amplitude >= 10.0:
+        raise SystemExit("amplitude must be in (0, 10) rad/s")
     if args.period < 1.0:
         raise SystemExit("period must be >= 1 s")
-    if args.speed_limit > 1.0:
-        raise SystemExit("speed_limit must be <= 1 rad/s")
+    if args.speed_limit > 10.0:
+        raise SystemExit("speed_limit must be <= 10 rad/s")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     cfg = load_config(args.config)
