@@ -1,0 +1,170 @@
+# DM6220 双轴云台上位机
+
+基于 **达妙 DM6220 中空云台电机**（滑环、绝对编码器，额定 1.3 N·m / 峰值 2.7 N·m）+ **达妙 USB2CAN 串口模块**（DM-USBCU1 一类）的 PC 端双轴云台控制软件。
+
+> 当前状态：**硬件 bring-up 阶段（2026-11-20）**。方案、协议笔记、配置模板已完成；已用 `scripts/usb2can_probe.py` 打通真机串口协议，并完成速度模式/MIT 位置保持测试。完整控制程序尚未开始。
+>
+> 2026-11-19 已运行官方 `DMTool-v2.1.9.4` 与 `USB2CAN_2.0.0.3` 做界面观察：两者均为 **COM + 921600 8N1**，确认应按串口型 USB2CAN（`55 AA` 帧）设计，而不是 libusb 型 USB2CANFD。
+>
+> 2026-11-20 真机确认：**COM10**，yaw = CAN 0x01/MST 0x11，pitch = CAN 0x02/MST 0x12，速度模式 3；`PMAX/VMAX/TMAX = 12.5/45/10`，`NPP=14`，`Gr=1.0`。可用帧为 `cmd=0x01, CAN ID@13–14, DLEN@18, CRC=0`。
+>
+> 连续旋转实测：yaw -0.5 rad/s × 45 s，16-bit 反馈在 ±12.5 rad 回绕，累计 -22.38 rad（-3.56 圈）；`p_m`（0x50）为多圈绝对位置，不回绕。详见 [`docs/hardware-notes.md`](docs/hardware-notes.md) 与 [`docs/usb2can-serial.md`](docs/usb2can-serial.md)。
+
+## 目标
+
+1. 用 **MIT 模式** 驱动两台 G6220，完成双轴云台的姿态控制。
+2. 在 PC 端实现 **位置环**，与电机驱动器内部的 **FOC 电流环** 构成串级控制；可选位置-速度-电流三环。
+3. 实现双轴云台的 **姿态正/逆运动学**、角度解缠、软限位与轨迹规划。
+4. 提供 **本地 Web UI + HTTP/WebSocket API + MCP Server + CLI**，让人和 AI 都能安全地操控云台。
+5. 支持无硬件仿真测试，硬件到位后可直接切换到真机。
+
+## 关键结论（先看这里）
+
+| 项目 | 决定 | 原因 |
+|---|---|---|
+| 语言 | **Python 3.11+**（当前环境 3.13 已验证可用） | 生态、AI 集成、开发效率最好；500 Hz 控制环足够，Windows 上需专门的定时线程 |
+| CAN 传输 | **`pyserial` + 达妙 USB2CAN 串口协议（`55 AA` 帧）** + **`python-can` `BusABC` 适配层** | 桌面的 DMTool 2.1.9.4 与 USB2CAN 2.0.0.3 都是 **COM + 921600 8N1**；Seeed 达妙教程也把这两个工具作为一套串口型 USB-CAN 方案。`dmcan-sdk`/libusb 仅作为 USB2CANFD 备选后端 |
+| USB2CANFD 备选 | `dmcan-sdk` 2.1.x + `libdmcan` | 如果实物是 USB2CANFD_S/D 或 LinkX4C（VID 34B7），改用 libusb 后端；上层电机/控制代码不变 |
+| 电机驱动 | **自行实现 MIT 编解码 + 寄存器访问** | 现有 `damiao-motor` 只支持 Linux SocketCAN 且没有 G6220；协议公开、帧格式固定，自己实现最可控 |
+| 控制周期 | **默认 500 Hz**，串口带宽下不建议 1 kHz | 实测 **500.0 Hz、p99 2.78 ms、0 overrun、0 坏帧**（两轴 MIT 保持，1500 周期）；500 Hz 已占约 46 KB/s（921600 8N1 约 92 KB/s 的 50%），1 kHz 会打满串口 |
+| 控制结构 | **PC 位置环 → 力矩/电流给定 → 驱动器 FOC 电流环** | MIT 模式只暴露力矩给定，驱动器的电流环不可绕过；这是能实现的“位置环外环 + 电流环内环”。bring-up 先用 `impedance`（MIT 内部 PD），验证 `tau_ff` 后切 `pos_current` |
+| 运动学 | **解析式 2-DOF 偏航/俯仰逆解** + 四元数/Euler 接口 | 两轴正交云台无需数值 IK；保留坐标变换层，方便以后扩展第三轴 |
+| 上位机形态 | **本地常驻 daemon + Web UI** | AI、CLI、GUI 共享同一份状态和安全层，避免多个进程抢占 USB 设备 |
+| AI 接口 | **MCP Server（stdio）作为 daemon 的客户端** | Claude Code 可直接调用；同时保留 HTTP/JSON，任何 AI/脚本都能接 |
+| 配置 | YAML + Pydantic 校验 | 电机 ID、零点、增益、限位都需要现场标定，配置文件比硬编码合适 |
+| 测试 | pytest + `python-can` virtual bus + 电机仿真模型 | 硬件没到之前就能把协议、控制、API 全链路跑通 |
+
+## 真机验证结果（2026-11-20）
+
+| 项目 | 结果 |
+|---|---|
+| 串口 | COM10，VID_2E88/PID_4603，921600 8N1 |
+| 串口帧 | `cmd=0x01`，CAN ID 2 字节 @13–14，DLEN@18，CRC=0 |
+| yaw 电机 | CAN 0x01 / MST 0x11，模式 3 |
+| pitch 电机 | CAN 0x02 / MST 0x12，模式 3 |
+| 限幅 | PMAX 12.5，VMAX 45，TMAX 10，NPP 14，Gr 1.0 |
+| 速度模式 | 0.1 rad/s × 0.3 s，两台平滑转动约 0.02 rad |
+| MIT 模式 | yaw `Kp=0.5, Kd=0.1`；pitch 需 `Kp=3.0, Kd=0.3`，低增益下 pitch 有约 0.03 rad 静差 |
+| 反向连续旋转 | yaw -0.5 rad/s × 45 s，1 次 wrap，累计 -22.38 rad（-3.56 圈） |
+| 正向连续旋转 | yaw +0.5 rad/s × 45 s，1 次 wrap，累计 +22.42 rad（+3.57 圈） |
+| 编码器 | 16-bit 反馈在 ±12.5 rad 回绕；`p_m` 0x50 为多圈绝对位置；`xout` 0x51=0 |
+| 500 Hz 基准 | **500.0 Hz，p99 2.78 ms，0 overrun，1501 帧/轴，3002 回执，0 坏帧** |
+| pitch 小步 | 0.03 rad，`Kp=3.0/Kd=0.3`，误差约 0.005–0.008 rad，最大速度 0.165 rad/s |
+| 纯力矩 `tau_ff` | 0.05 N·m 指令 → 反馈约 0.0415 N·m，yaw 加速到 0.582 rad/s；`KT_Value=0` 不影响纯力矩 |
+| 最大实测 | 速度 0.582 rad/s，力矩 0.0464 N·m，温度 33/29 °C |
+| 当前状态 | 两台已恢复速度模式 3、失能、timeout 0 |
+| 当前位置 | yaw `p_m` +8.582 rad，pitch -2.867 rad |
+
+## 架构一览
+
+```text
+┌──────────────┐   ┌──────────────┐   ┌─────────────────────┐
+│ 本地 Web UI  │   │     CLI      │   │   MCP Server / AI   │
+└──────┬───────┘   └──────┬───────┘   └──────────┬──────────┘
+       │                  │                      │
+       └──────────────┬───┴──────────────────────┘
+                      │  HTTP / WebSocket / MCP
+              ┌───────▼─────────────────────────┐
+              │         GimbalService            │
+              │  状态机 / 命令邮箱 / 安全限幅    │
+              │  遥测快照 / 审计日志             │
+              └───────┬──────────────────────────┘
+                      │
+              ┌───────▼─────────────────────────┐
+              │   ControlLoop（独立线程，500 Hz）│
+              │轨迹 → 逆解 → 位置 PID → 力矩  │
+              └───────┬──────────────────────────┘
+                      │
+              ┌───────▼─────────────────────────┐
+              │   DmMotor × 2（MIT 编解码）      │
+              └───────┬──────────────────────────┘
+                      │
+              ┌───────▼─────────────────────────┐
+              │ python-can BusABC                │
+              │ ├─ SerialUsb2CanBus（pyserial）  │
+              │ ├─ DmCanBus（USB2CANFD 备选）    │
+              │ ├─ SocketCAN（Linux 备选）       │
+              │ └─ virtual（仿真/测试）          │
+              └───────┬──────────────────────────┘
+                      │
+              达妙 USB2CAN（COM）→ CAN 1 Mbps → DM-G6220 × 2
+```
+
+## 计划中的仓库结构
+
+```text
+DM6220Gimbal/
+├─ pyproject.toml
+├─ README.md
+├─ .gitignore
+├─ config/
+│  ├─ gimbal.example.yaml
+│  └─ calibration.example.yaml
+├─ docs/
+│  ├─ architecture.md        # 详细设计
+│  ├─ hardware-notes.md      # 电机/协议/模块资料
+│  ├─ usb2can-serial.md      # 55 AA 串口帧协议与抓包方法
+│  ├─ decisions.md           # 技术选型 ADR
+│  └─ ai-control.md          # API / MCP / 安全约束
+├─ src/dm6220_gimbal/
+│  ├─ transport/             # CAN 后端与 python-can 适配
+│  ├─ motor/                 # MIT 编解码、G6220 参数、DmMotor
+│  ├─ control/               # PID、滤波、串级、轨迹、安全
+│  ├─ kinematics/            # 正逆解、坐标变换、角度解缠
+│  ├─ service/               # 状态机、控制循环、遥测、审计
+│  ├─ api/                   # FastAPI、WebSocket、MCP、CLI
+│  └─ ui/                    # 本地 Web 仪表盘
+├─ scripts/
+│  ├─ usb2can_probe.py       # 55 AA 帧探测/只读寄存器
+│  ├─ yaw_continuous_test.py # 连续 yaw + pitch MIT 保持测试
+│  ├─ serial_500hz_bench.py  # 双电机 500 Hz 串口/反馈基准
+│  ├─ capture_usb2can.py     # 串口抓包/帧解析（后续）
+│  ├─ fetch_dmcan_dlls.ps1   # 仅 USB2CANFD 备选后端需要
+│  └─ can_scan.py            # 扫描总线上的电机（后续）
+└─ tests/
+   ├─ unit/                  # 协议、PID、运动学
+   ├─ sim/                   # 虚拟 CAN + 电机模型
+   └─ hardware/              # 真机测试（pytest -m hardware）
+```
+
+## 待确认的问题
+
+已确认：
+
+- [x] 串口型 USB2CAN，COM10，VID_2E88/PID_4603，921600 8N1。
+- [x] 两台电机 CAN ID 0x01/0x02，Master ID 0x11/0x12。
+- [x] `PMAX/VMAX/TMAX = 12.5/45/10`，`NPP=14`，`Gr=1.0`。
+- [x] 串口帧格式：`cmd=0x01, CAN ID@13–14, DLEN@18, CRC=0`。
+- [x] 速度模式与 MIT 位置保持均已实测。
+- [x] yaw 可连续旋转；16-bit 反馈在 ±12.5 rad 回绕，`p_m` 0x50 为多圈绝对位置，`xout` 0x51=0。
+- [x] yaw 双方向连续旋转均正常：反向 -22.38 rad、正向 +22.42 rad；各 1 次 wrap。
+- [x] 此前 +10 rad 的 0.696 N·m 尖峰确认是外部触碰，不是机械/控制问题。
+- [x] 纯力矩 `tau_ff` 已验证：`KT_Value=0` 不影响；0.05 N·m 指令产生约 0.0415 N·m 反馈。
+- [x] 500 Hz 双电机基准通过：500.0 Hz、p99 2.78 ms、0 overrun、0 坏帧。
+
+仍需确认：
+
+- [ ] 机械零位、两轴正方向、俯仰软限位。
+- [ ] CAN 总线拓扑与 120 Ω 终端电阻；双 CAN 口是并联还是级联。
+- [ ] 负载惯量、重心、俯仰轴重力矩，用于重力补偿和前馈。
+- [ ] Windows 上 500 Hz 控制环的实际抖动与串口往返延迟。
+- [ ] `KT_Value=0.0` 时纯力矩 `tau_ff` 的实际换算；需要低速、低力矩单独验证。
+- [ ] 实物丝印/固件版本；是否支持高于 921600 的串口速率。
+
+## 参考资料
+
+- [DM-G6220 说明书（OpenELAB Wiki）](https://wiki.openelab.io/damiao/damiao-dm-g6220-motor-instruction-manual)
+- [DM-G6220 中文说明书（Gitee）](https://gitee.com/kit-miao/DM-G6220)
+- [Seeed Studio DAMIAO 电机教程](https://wiki.seeedstudio.com/damiao_series/)
+- [DM-USBCU1 USB-CAN 模块（串口协议）](https://damiao.enactic.ai/en/products/hardware/dm-usbcu1/)
+- [达妙 DMTool 发布仓](https://github.com/dmBots/motor-debugging-tool)
+- [DM_CAN.py 串口驱动（55 AA 帧参考）](https://github.com/cmjang/DM_Control_Python/blob/main/DM_CAN.py)
+- [达妙 DM_DeviceSDK / dmcan（USB2CANFD 备选）](https://gitee.com/kit-miao/dm-device-sdk)
+- [dmcan-sdk（PyPI）](https://pypi.org/project/dmcan-sdk/)
+- [python-can 文档](https://python-can.readthedocs.io/)
+- [达妙 MIT 协议整理（python-damiao-driver）](https://github.com/jia-xie/python-damiao-driver/blob/main/docs/concept/communication-protocol.md)
+- [LeRobot Damiao 驱动与参数表](https://github.com/huggingface/lerobot/blob/main/src/lerobot/motors/damiao/tables.py)
+
+## 许可证
+
+本项目使用 MIT License。第三方依赖的许可证（`pyserial` BSD-3-Clause、`python-can` LGPL-3.0、`dmcan-sdk` Apache-2.0 等）在实现阶段单独记录。

@@ -1,0 +1,131 @@
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+.Python
+build/
+dist/
+sdist/
+wheels/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+MANIFEST
+.installed.cfg
+*.egg
+
+# ============================================================
+# Virtual environments / dependency managers
+# ============================================================
+.venv/
+venv/
+env/
+ENV/
+.pixi/
+.conda/
+# 锁定文件应当提交：uv.lock / poetry.lock / requirements.lock
+# .python-version 也建议提交
+
+# ============================================================
+# Test / coverage / type check / lint caches
+# ============================================================
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyre/
+.pytype/
+
+# ============================================================
+# Jupyter
+# ============================================================
+.ipynb_checkpoints/
+
+# ============================================================
+# IDE / OS
+# ============================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============================================================
+# Secrets / local environment
+# ============================================================
+.env
+.env.*
+!.env.example
+secrets.yaml
+secrets.yml
+*.pem
+*.key
+
+# ============================================================
+# Runtime output: logs, recordings, telemetry
+# ============================================================
+logs/
+log/
+recordings/
+data/
+*.log
+*.jsonl
+*.mcap
+*.bag
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================================
+# Local config / calibration
+# ============================================================
+# 只提交 *.example.yaml；真机 ID、零点、增益等本地配置不入库
+config/gimbal.yaml
+config/calibration.yaml
+config/local.*
+!config/*.example.yaml
+
+# ============================================================
+# Vendor binaries (downloaded by scripts/fetch_dmcan_dlls.ps1)
+# ============================================================
+# 后端动态库不随 PyPI 包分发，需从 DM_DeviceSDK 发布仓获取。
+# 为避免把二进制提交进 Git，默认忽略；保留 README / checksum。
+vendor/dmcan/**/*.dll
+vendor/dmcan/**/*.so
+vendor/dmcan/**/*.dylib
+vendor/dmcan/**/*.lib
+vendor/dmcan/**/*.pdb
+!vendor/dmcan/README.md
+!vendor/dmcan/checksums.txt
+
+# ============================================================
+# Frontend (if/when a Vite-based UI is added)
+# ============================================================
+node_modules/
+ui/dist/
+ui/.vite/
+*.tsbuildinfo
+
+# ============================================================
+# Archives / temporary files
+# ============================================================
+*.whl
+*.tar.gz
+*.zip
+tmp/
+temp/
+.cache/

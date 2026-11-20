@@ -1,0 +1,151 @@
+# DM6220 双轴云台配置模板
+# 复制为 config/gimbal.yaml 后修改；本地配置不入库。
+# 所有角度内部使用弧度；API 的 attitude 接口使用度（字段名会显式带 _deg）。
+
+can:
+  backend: serial_usb2can     # serial_usb2can | dmcan | socketcan | virtual
+
+  # ---- 串口型 USB2CAN（当前主路径，DMTool/USB2CAN 工具对应） ----
+  port: COM10                 # 本机实测为 COM10；换机器按设备管理器修改
+  auto_detect: true           # 按 COM 描述/VID-PID 自动找 USB2CAN
+  baud: 921600                # DMTool 默认：921600, 8, None, 1
+  can_bitrate: 1000000        # G6220 固定 1 Mbps
+  can_baud_index: 0           # 55 05 <index>：0=1000k, 1=800k, 2=666k, 3=500k ...
+  set_can_baud: true          # 启动时发 55 05 00 AA 55；若模块不接受可设 false
+  protocol: usb2can_v2        # 55 AA 30B TX / AA..55 16B RX
+  send_heartbeat: true        # 周期发 55 04 AA 55
+  heartbeat_ms: 1000
+  rx_queue_size: 4096
+  tx_timeout_ms: 5
+
+  # ---- USB2CANFD 备选（backend: dmcan） ----
+  # device_index: 0
+  # channel: 0                # S 只有 0；D 为 0/1；LinkX4C 为 0..3
+  # sample_point: 0.8
+  # library_path: vendor/dmcan/libdmcan.dll
+
+motors:
+  yaw:
+    model: DMG6220
+    can_id: 0x01              # ESC_ID / 控制帧 ID
+    feedback_id: 0x11         # MST_ID / 反馈帧 ID（建议每台不同）
+    direction: 1              # +1 或 -1，按机械正方向标定
+    zero_offset_rad: 0.0      # 软件零偏：电机零位 -> 云台零位
+    p_max: 12.5               # 已读回（RID 0x15）
+    v_max: 45.0               # 已读回（RID 0x16）；DMTool 滑块默认 30 只是界面默认
+    t_max: 10.0               # 已读回（RID 0x17）；不是物理峰值
+    torque_limit_nm: 0.8      # bring-up 保守值；MIT hold 实测约 0.01 N·m
+    temp_warn_c: 75
+    temp_fault_c: 90
+  pitch:
+    model: DMG6220
+    can_id: 0x02
+    feedback_id: 0x12
+    direction: 1
+    zero_offset_rad: 0.0
+    p_max: 12.5               # 已读回
+    v_max: 45.0               # 已读回
+    t_max: 10.0               # 已读回
+    torque_limit_nm: 0.8      # bring-up 保守值
+    temp_warn_c: 75
+    temp_fault_c: 90
+
+control:
+  rate_hz: 500                # 串口 921600 下默认 500；两电机 500 Hz 已占约 50% 带宽，不建议 1000
+  # bring-up 先用 impedance（MIT 内部 PD，已验证）；tau_ff 已验证，PC 位置环整定后切 pos_current
+  mode: impedance             # pos_current | pos_vel_current | impedance
+  feedback_timeout_ms: 100
+  command_ttl_ms: 500         # AI/API 目标超时后保持最后位置
+
+  # ---- pos_current: 位置 PID -> 力矩 ----
+  position:
+    kp: 8.0                   # N·m/rad，占位值，必须现场整定
+    ki: 0.30                  # N·m/(rad·s)
+    kd: 0.40                  # N·m/(rad/s)，作用于测量值
+    integral_limit: 0.5       # 积分项限幅（N·m）
+    output_limit_nm: 0.8
+    derivative_filter_hz: 30.0
+    deadband_rad: 0.0
+
+  # ---- pos_vel_current: 位置环输出速度，速度环输出力矩 ----
+  velocity:
+    kp: 0.20                  # N·m/(rad/s)
+    ki: 0.02
+    kd: 0.0
+    integral_limit: 0.5
+    output_limit_nm: 0.8
+    feedback_filter_hz: 50.0
+    target_limit_rad_s: 1.0   # bring-up 限 1 rad/s
+
+  # ---- impedance: 直接下发 MIT PD（真机已验证的低增益） ----
+  # 注意：p_des 在 ±12.5 rad 会回绕，连续 yaw 不要用 impedance；连续 yaw 用 pos_current 或速度模式
+  impedance:
+    yaw:
+      kp: 0.5                 # MIT Kp，范围 0..500
+      kd: 0.1                 # MIT Kd，范围 0..5
+      v_des: 0.0
+    pitch:
+      kp: 3.0                 # pitch 有重力/摩擦，低增益跟踪误差大
+      kd: 0.3
+      v_des: 0.0
+
+  # 可选前馈（第一版可全为 0）
+  feedforward:
+    gravity_enabled: false
+    gravity_nm_at_horizontal: 0.0
+    inertia_kgm2: 0.0
+    viscous_friction: 0.0
+
+  trajectory:
+    max_joint_velocity_rad_s: 1.0   # bring-up 限 1 rad/s
+    max_joint_accel_rad_s2: 12.0
+    default_duration_s: 0.5
+
+kinematics:
+  convention: yaw_pitch_zyx  # R_WC = Rz(yaw) * Ry(pitch)
+  yaw_sign: 1
+  pitch_sign: 1
+  yaw_offset_rad: 0.0
+  pitch_offset_rad: 0.0
+  yaw_continuous: true        # 滑环，可连续旋转；目标角使用 unwrapped 角度
+  yaw_min_rad: -1.0e9         # 连续时仅作数值保护
+  yaw_max_rad: 1.0e9
+  pitch_continuous: false
+  pitch_min_rad: -1.4835      # -85 deg
+  pitch_max_rad: 1.4835       # +85 deg
+  roll_tolerance_rad: 0.01
+  unwrap_yaw: true
+  absolute_position_rid: 0x50 # p_m 多圈绝对位置；16-bit 反馈在 ±12.5 回绕
+  absolute_position_resync_hz: 2.0
+
+api:
+  host: 127.0.0.1             # 默认仅本机
+  port: 8765
+  token: null                 # 远程访问时必须配置
+  max_command_rate_hz: 20     # 目标命令限流
+  max_target_step_deg: 10.0   # 单次命令最大目标跳变
+  cors_origins: []            # 本地 UI 不需要 CORS
+
+safety:
+  estop_behavior: ramp_and_disable  # ramp_and_disable | hold | disable
+  estop_ramp_ms: 300
+  max_loop_overruns: 10       # 连续 overrun 超过则降级/报警
+  enable_ramp_ms: 300         # 使能后力矩斜坡
+  allow_ai_pid_write: true    # AI 可改 PID，但受硬限幅
+  hard_max_torque_nm: 1.5     # 代码兜底，配置不能超过
+  hard_max_velocity_rad_s: 1.0  # 用户 bring-up 安全限速
+  hard_max_temp_c: 100
+
+telemetry:
+  snapshot_hz: 50             # 内部快照/WS 推送频率
+  record_hz: 100              # 记录频率
+  record_dir: recordings
+  ring_buffer_seconds: 30
+  jsonl: true
+  csv: false
+
+logging:
+  level: INFO
+  file: logs/gimbald.log
+  json: true
+  console: true

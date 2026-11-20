@@ -1,0 +1,52 @@
+# 云台标定文件模板
+# 复制为 config/calibration.yaml 后填写；该文件依赖具体装配，不入库。
+# 角度单位：rad；力矩单位：N·m。
+
+version: 1
+
+yaw:
+  # 电机安装方向相对云台正方向：+1 或 -1
+  direction: 1
+  # 电机零位与云台零位的软件偏置：gimbal_angle = direction * motor_angle + offset
+  offset_rad: 0.0
+  # 机械软限位（留 2–3° 安全余量）
+  min_rad: -3.14159265
+  max_rad: 3.14159265
+  # 是否连续旋转；yaw 带滑环，已确认可连续
+  continuous: true
+  # 标定日期与备注
+  calibrated_at: "2026-11-19"
+  note: "示例值，未标定"
+
+pitch:
+  direction: 1
+  offset_rad: 0.0
+  min_rad: -1.4835      # -85 deg
+  max_rad: 1.4835       # +85 deg
+  continuous: false
+  calibrated_at: "2026-11-19"
+  note: "示例值，未标定"
+
+# 重力前馈：在多个俯仰角下测量保持力矩后拟合
+# tau_g(pitch) = a * cos(pitch) + b * sin(pitch) + c
+gravity:
+  enabled: false
+  pitch_axis:
+    a: 0.0
+    b: 0.0
+    c: 0.0
+  note: "需在真机上辨识"
+
+# 负载信息，用于前馈和限幅校核
+payload:
+  mass_kg: 0.0
+  com_from_pitch_axis_m: 0.0
+  inertia_yaw_kgm2: 0.0
+  inertia_pitch_kgm2: 0.0
+  note: "示例值，待测量"
+
+# 电机零位是否已写入驱动器 flash（true 表示曾执行 set_zero + store）
+motor_zero:
+  yaw_written: false
+  pitch_written: false
+  note: "优先使用软件 offset，避免频繁写 flash"
